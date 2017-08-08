@@ -4,17 +4,9 @@ const fs = require("fs");
 const moment = require("moment");
 const flatten = require("lodash.flatten");
 const sample = require("lodash.sample");
-const dataFilePath = "./data/chisha.json";
+const dataFilePath = process.env.HUBOT_CHISHA_JSON_FILE;
 
 const createSessions = {};
-
-(function ensureJsonFile() {
-  try {
-    getData();
-  } catch (err) {
-    fs.writeFileSync(dataFilePath, JSON.stringify({}));
-  }
-})();
 
 function getQuestionBySession(session) {
   return {
@@ -27,19 +19,11 @@ function getDeletors(restaurant) {
  return Array.from(new Set(restaurant.deletors));
 }
 
-function getData() {
-  const data = JSON.parse(fs.readFileSync(dataFilePath));
-  return data || {};
-}
 
 function renderRestaurant(restaurant) {
   const average = getAverage(restaurant).toString().slice(0, 3);
   return `**${restaurant.name}** ${restaurant.halal ? '[清真]' : ''} 平均分：${average}, 距离：${restaurant.far} 米，人均：${restaurant.price} 元`
 };
-
-function saveData(data) {
-  fs.writeFileSync(dataFilePath, JSON.stringify(data));
-}
 
 function getAverage(restaurant) {
   const ranks = Object.values(restaurant.ranks);
@@ -62,6 +46,32 @@ function renderMembers(members) {
 }
 
 module.exports = (robot) => {
+  function loadData () {
+    if (dataFilePath) {
+      return JSON.parse(fs.readFileSync(dataFilePath)) || {};
+    } else {
+      return JSON.parse(robot.brain.get("hubot-chisha")) || {};
+    }
+  }
+
+  function saveData (data) {
+    if (dataFilePath) {
+      fs.writeFileSync(dataFilePath, JSON.stringify(data));
+    } else {
+      robot.brain.set("hubot-chisha", JSON.stringify(data));
+    }
+  }
+
+  (function ensureJsonFile() {
+    try {
+      loadData();
+    } catch (err) {
+      saveData({});
+    }
+  })();
+
+
+
   robot.respond(/吃啥(帮助| help)/i, (res) => {
     res.send(`吃啥相关暗语说明：
 1. 吃啥 roll [近/便宜/老板请客/清真/好吃] => 获得专业美食推荐
@@ -74,7 +84,7 @@ module.exports = (robot) => {
   });
 
   robot.respond(/吃啥 roll([\s\S]*)/i, (res) => {
-    const data = getData();
+    const data = loadData();
     let restaurants = Object.values(data);
 
     if (res.match[1].indexOf('近') !== -1) {
@@ -113,7 +123,7 @@ module.exports = (robot) => {
       switch (session.step) {
         case 1:
           if (anwser.match(/\d+/)) {
-            session.far = parseInt(anwser);
+            session.far = parseInt(anwser.match(/\d+/)[0]);
             if (session.far < 0 || session.far > 100000) {
               res.send(`你逗我呢？距离只支持 0 - 100000`);
               return;
@@ -126,14 +136,14 @@ module.exports = (robot) => {
           break;
         case 2:
           if (anwser.match(/\d+/)) {
-            session.price = parseInt(anwser);
+            session.price = parseInt(anwser.match(/\d+/)[0]);
             if (session.price < 0 || session.price > 1000) {
               res.send(`你逗我呢？人均价格只支持 0 - 1000`);
               return;
             }
             session.step++;
             res.send(`**${session.name}** 添加成功：距离 ${session.far} 米，人均 ${session.price} 元`);
-            const data = getData();
+            const data = loadData();
             data[session.name] = session;
             saveData(data);
             createSessions[res.message.user.id] = null;
@@ -147,7 +157,7 @@ module.exports = (robot) => {
 
 
   robot.respond(/吃啥 list/i, (res) => {
-    const data = getData();
+    const data = loadData();
     const restaurants = Object.values(data);
     if (restaurants.length) {
       res.send(`当前餐厅列表：\n` + restaurants.map(renderRestaurant).join("\n"));
@@ -158,7 +168,7 @@ module.exports = (robot) => {
 
   robot.respond(/吃啥 rank (.+) (\d+)/i, (res) => {
     const uid = res.message.user.id;
-    const data = getData();
+    const data = loadData();
     const name = res.match[1].trim();
     const rank = parseInt(res.match[2]);
     const restaurant = data[name];
@@ -182,7 +192,7 @@ module.exports = (robot) => {
       res.send("名字真有那么长？ 骗人");
       return;
     }
-    const data = getData();
+    const data = loadData();
     const restaurant = data[name];
     if (restaurant) {
       res.send(`${name} 已经在列表里` );
@@ -204,7 +214,7 @@ module.exports = (robot) => {
   robot.respond(/吃啥 del (.+)/i, (res) => {
     const DELETORS_COUNT = 2;
     const uid = res.message.user.id;
-    const data = getData();
+    const data = loadData();
     const name = res.match[1].trim();
     const restaurant = data[name];
     if (!restaurant) {
@@ -224,7 +234,7 @@ module.exports = (robot) => {
 
   robot.respond(/吃啥 halal (.+)/i, (res) => {
     const uid = res.message.user.id;
-    const data = getData();
+    const data = loadData();
     const name = res.match[1].trim();
     const restaurant = data[name];
     if (!restaurant) {
