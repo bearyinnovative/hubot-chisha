@@ -3,7 +3,7 @@ chai = require 'chai'
 
 expect = chai.expect
 
-helper = new Helper('../src/chisha.coffee')
+helper = new Helper('../src/chisha.js')
 
 describe 'chisha', ->
   beforeEach ->
